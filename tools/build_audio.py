@@ -8,7 +8,7 @@
   audio/sent/<id>/<NNN>.ogg    — отдельные предложения (по таймкодам ts)
 
 Громкость выравнивается (loudnorm): записи 2007–2018 гг. сильно разные.
-Запуск: python tools/build_audio.py data/raw.json
+Запуск: python tools/build_audio.py corpus/raw.json
 """
 
 import json

@@ -21,16 +21,16 @@ CC BY-NC-SA 4.0): 55 текстов, 2 076 предложений, ~4,5 ч ре�
 
 ## Данные
 ```
-tools/extract.py      EXB -> data/raw.json (предложения, слова, глоссы, таймкоды)
+tools/extract.py      EXB -> corpus/raw.json (предложения, слова, глоссы, таймкоды)
 tools/to_cyrillic.py  транскрипция -> современная кириллица
-tools/build_corpus.py raw.json + kalmyk.coma -> data/corpus.json, data/review_unknown.tsv
+tools/build_corpus.py raw.json + kalmyk.coma -> corpus/corpus.json, corpus/review_unknown.tsv
 tools/build_audio.py  mp3 -> audio/full/*.ogg и audio/sent/<id>/NNN.ogg (Opus 32k, loudnorm)
 ```
 Пересборка всего:
 ```
-python3 tools/extract.py data/raw.json
+python3 tools/extract.py corpus/raw.json
 python3 tools/build_corpus.py
-python3 tools/build_audio.py data/raw.json
+python3 tools/build_audio.py corpus/raw.json
 ```
 
 ### Кириллица
@@ -39,8 +39,8 @@ python3 tools/build_audio.py data/raw.json
 победителя выбирает частотный словарь из todorxoi-bot
 (`model/letters_vocab.tsv.gz`, 108 тыс. словоформ); каждое отступление от
 правила по умолчанию штрафуется. 91 % слов нашлись в словаре; остальное
-(диалектизмы, заимствования, имена) — в `data/review_unknown.tsv`.
-Ручные правки — `data/overrides.tsv` (`латиница<TAB>кириллица`), затем
+(диалектизмы, заимствования, имена) — в `corpus/review_unknown.tsv`.
+Ручные правки — `corpus/overrides.tsv` (`латиница<TAB>кириллица`), затем
 `build_corpus.py`.
 
 ### Аудио
@@ -56,7 +56,7 @@ python3 tools/build_audio.py data/raw.json
 |---|---|
 | `BOT_TOKEN` | токен бота, обязательно |
 | `ADMIN_IDS` | id админов через запятую: `/stats`, правки текста |
-| `DATA_DIR` | база, логи, кеш 🐢; по умолчанию `./state`, на хостинге — постоянный диск |
+| `DATA_DIR` | база, логи, кеш 🐢; по умолчанию `./data` (как в todorxoi-bot), на хостинге — постоянный диск |
 | `LOG_LEVEL` | `INFO` по умолчанию |
 
 В `DATA_DIR` бот пишет:
@@ -75,5 +75,5 @@ python -m bot.main
 ## Лицензия данных
 Записи, расшифровки и переводы — INEL Kalmyk Corpus 1.3, Universität Hamburg,
 CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/).
-Аудио в `audio/` и кириллица в `data/corpus.json` — производные от корпуса
+Аудио в `audio/` и кириллица в `corpus/corpus.json` — производные от корпуса
 под той же лицензией; использовать только некоммерчески, со ссылкой на источник.

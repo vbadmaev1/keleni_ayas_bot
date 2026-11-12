@@ -2,7 +2,7 @@
 
   BOT_TOKEN   токен бота (обязательно)
   ADMIN_IDS   id админов через запятую: /stats и правки текста
-  DATA_DIR    папка для базы, логов и кеша замедленных записей (по умолчанию ./state);
+  DATA_DIR    папка для базы, логов и кеша замедленных записей (по умолчанию ./data, как в todorxoi-bot);
               на хостинге должна лежать на постоянном диске, иначе всё
               пропадёт при пересборке
   LOG_LEVEL   INFO по умолчанию
@@ -39,6 +39,6 @@ class Config:
             piece = piece.strip()
             if piece.lstrip("-").isdigit():
                 admins.add(int(piece))
-        data_dir = Path(os.getenv("DATA_DIR") or ROOT / "state").expanduser().resolve()
+        data_dir = Path(os.getenv("DATA_DIR") or ROOT / "data").expanduser().resolve()
         return cls(token=token, admins=admins, data_dir=data_dir,
                    log_level=os.getenv("LOG_LEVEL", "INFO").upper())

@@ -1,6 +1,6 @@
 .env
-state/
-data/raw.json
+data/
+corpus/raw.json
 __pycache__/
 *.py[cod]
 *.sqlite
@@ -10,3 +10,4 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+audio/slow/

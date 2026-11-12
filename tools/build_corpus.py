@@ -1,12 +1,12 @@
 """
-raw.json + kalmyk.coma -> data/corpus.json для бота.
+raw.json + kalmyk.coma -> corpus/corpus.json для бота.
 
 У каждого предложения: латиница (исходная транскрипция без разметки),
 кириллица (tools/to_cyrillic.py), переводы ru/en, таймкоды и список слов,
 которых не нашлось в словаре (кандидаты на ручную правку,
-см. data/review_unknown.tsv и data/overrides.tsv).
+см. corpus/review_unknown.tsv и corpus/overrides.tsv).
 
-Ручные правки: data/overrides.tsv, строки «латиница<TAB>кириллица».
+Ручные правки: corpus/overrides.tsv, строки «латиница<TAB>кириллица».
 Применяются к слову целиком (без учёта регистра первой буквы).
 """
 
@@ -55,11 +55,11 @@ def audio_seconds(path):
 
 
 def main():
-    raw = json.load(open(ROOT / "data/raw.json"))
+    raw = json.load(open(ROOT / "corpus/raw.json"))
     meta = coma_meta()
     conv = Converter()
     overrides = {}
-    ov = ROOT / "data/overrides.tsv"
+    ov = ROOT / "corpus/overrides.tsv"
     if ov.exists():
         for row in csv.reader(open(ov), delimiter="\t"):
             if len(row) >= 2 and not row[0].startswith("#"):
@@ -99,8 +99,8 @@ def main():
             partial=bool(aligned and full_sec and last < full_sec * 0.8),
             sentences=sents))
 
-    json.dump(texts, open(ROOT / "data/corpus.json", "w"), ensure_ascii=False, indent=1)
-    with open(ROOT / "data/review_unknown.tsv", "w") as f:
+    json.dump(texts, open(ROOT / "corpus/corpus.json", "w"), ensure_ascii=False, indent=1)
+    with open(ROOT / "corpus/review_unknown.tsv", "w") as f:
         f.write("# латиница\tкириллица (авто)\tсколько раз\tпример (текст, предложение)\n")
         for w, n in unknown.most_common():
             f.write(f"{w}\t{conv.word(w)[0]}\t{n}\t{unknown_ex[w][0]} #{unknown_ex[w][1]}\n")

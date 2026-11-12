@@ -1,4 +1,4 @@
-"""Корпус: загрузка data/corpus.json, поиск, вспомогательные функции."""
+"""Корпус: загрузка corpus/corpus.json, поиск, вспомогательные функции."""
 
 import json
 import random
@@ -121,7 +121,7 @@ class Text:
 
 
 class Corpus:
-    def __init__(self, path: Path = ROOT / "data" / "corpus.json"):
+    def __init__(self, path: Path = ROOT / "corpus" / "corpus.json"):
         raw = json.load(open(path, encoding="utf-8"))
         self.texts: Dict[str, Text] = {}
         self.order: List[str] = []

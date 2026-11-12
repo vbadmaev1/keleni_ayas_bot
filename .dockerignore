@@ -1,7 +1,7 @@
 .git
-state
+data
 .env
-data/raw.json
+corpus/raw.json
 tools
 tests
 __pycache__
