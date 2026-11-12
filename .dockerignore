@@ -1,0 +1,7 @@
+.git
+state
+.env
+data/raw.json
+tools
+tests
+__pycache__

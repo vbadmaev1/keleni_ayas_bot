@@ -1,0 +1,12 @@
+.env
+state/
+data/raw.json
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite3*
+*.jsonl
+*.log
+.DS_Store
+.idea/
+.vscode/
