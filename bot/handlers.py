@@ -147,8 +147,8 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
     @r.message(Command("about"))
     @r.message(F.text == T.BTN_ABOUT)
     async def about(m: Message):
-        inel = [t for t in corpus.texts.values() if t.genre != "manual"]
-        manual = [t for t in corpus.texts.values() if t.genre == "manual"]
+        inel = [t for t in corpus.texts.values() if not t.genre.startswith("manual")]
+        manual = [t for t in corpus.texts.values() if t.genre.startswith("manual")]
         n_sent = sum(len(t.sentences) for t in inel)
         hours = sum(t.duration for t in inel) / 3600
         text = T.ABOUT.format(texts=len(inel), sent=n_sent, hours=f"{hours:.1f}".replace(".", ","))

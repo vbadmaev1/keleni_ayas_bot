@@ -123,7 +123,7 @@ class Text:
 
 class Corpus:
     def __init__(self, path: Path = ROOT / "corpus" / "corpus.json",
-                 manual: Path = ROOT / "corpus" / "sarpa.json"):
+                 manual: Path = ROOT / "corpus" / "manual.json"):
         raw = json.load(open(path, encoding="utf-8"))
         if manual and Path(manual).exists():   # собранные вручную записи (tools/add_manual.py)
             raw += json.load(open(manual, encoding="utf-8"))
@@ -139,7 +139,7 @@ class Corpus:
             self.texts[t["id"]] = Text(**fields, sentences=sents)
             self.order.append(t["id"])
         # сортировка каталога: по названию внутри жанра
-        self.order.sort(key=lambda i: (self.texts[i].genre == "manual",
+        self.order.sort(key=lambda i: (self.texts[i].genre.startswith("manual"),
                                        self.texts[i].genre, self.texts[i].title_ru))
         self.index = {tid: k for k, tid in enumerate(self.order)}
         self._playable: Dict[tuple, List[Sentence]] = {}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Записи о Сарпе -> corpus/sarpa.json + audio/{full,sent}/manual_sarpa*.
+"""Ручная разметка -> corpus/manual.json + audio/{full,sent}/manual_*.
 Источник: research/w2v/review/labels.json (строки со статусом ✓ — проверенные человеком) и review/audio/<id>.m4a.
 Тексты — кириллица, исправленная вручную после распознавания моделью; перевода и транскрипции нет.
 Запуск:  python3 tools/add_manual.py  """
@@ -12,9 +12,14 @@ OPUS = ["-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-applicat
         "-af", "loudnorm=I=-18:TP=-2:LRA=11"]
 NOTE = "Текст проверен вручную. В режиме «По предложениям» доступны проверенные фрагменты. Перевода нет."
 TITLES = {
-    "sarpa": "Сарпа: семейные воспоминания",
+    "sarpa": "Открытие хурула в посёлке Сарпа",
     "sarpa2": "Сарпа: Павел Лиджиев о совхозе и «Джангаре»",
     "sarpa3": "Сарпа: Канур Утаджиев о посёлке и хуруле",
+    "kalyan_sanji": "Санджи Каляев о калмыцком языке и грамотности",
+    "video_0859": "О писательском мастерстве",
+    "video_0900": "Воспоминания о Хошутовском хуруле",
+    "vk_173737045_896": "О писателе Басане Дорджиеве",
+    "vk_173737045_814": "Геше Санал о буддийском образовании",
 }
 
 
@@ -51,12 +56,13 @@ def main():
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(full)],
             text=True,
         ))
-        out.append({"id": tid, "genre": "manual", "genre_ru": "Сарпа", "title_ru": title,
+        genre, genre_ru = ("manual", "Сарпа") if fid.startswith("sarpa") else ("manual_other", "Другое")
+        out.append({"id": tid, "genre": genre, "genre_ru": genre_ru, "title_ru": title,
                     "title_en": "", "dialect": "", "year": "", "place": "", "speakers": [], "audio": True,
                     "aligned": True, "duration": round(duration, 1), "partial": False,
                     "note": NOTE, "sentences": sents})
         print(fid, len(sents), "предложений")
-    json.dump(out, open(ROOT / "corpus/sarpa.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(out, open(ROOT / "corpus/manual.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("записей:", len(out), "предложений:", sum(len(t["sentences"]) for t in out))
 
 
