@@ -1,7 +1,7 @@
 aiogram>=3.15,<4
 python-dotenv>=1.0,<2
 numpy>=1.26,<2
-onnxruntime>=1.20,<2   # только для распознавания речи (ASR_ENABLED=1)
-pyctcdecode>=0.5,<1    # декодирование с языковой моделью (ASR_LM_ENABLED=1)
-kenlm>=0.3.0,<0.4      # движок n-граммной модели
+onnxruntime>=1.20,<2
+pyctcdecode>=0.5,<1
+kenlm>=0.3.0,<0.4
 # + ffmpeg в системе (замедление 🐢, сборка аудио и распознавание)
