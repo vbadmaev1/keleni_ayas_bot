@@ -14,6 +14,8 @@ from aiogram.types import BotCommand
 from . import texts
 from .config import Config
 from .corpus import Corpus
+from .asr import Recognizer
+from .asr_handlers import build_asr_router
 from .handlers import build_router
 from .storage import Storage
 
@@ -35,11 +37,23 @@ async def run() -> None:
 
     bot = Bot(cfg.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
+    rec = Recognizer(cfg.data_dir)
+    if rec.available():
+        dp.include_router(build_asr_router(rec, cfg.admins))   # раньше основного: ловит голосовые и аудио
+        logging.getLogger("keleni").info("распознавание речи включено (потоков: %d, до %d с)", rec.threads, rec.max_sec)
+    elif rec.enabled:
+        logging.getLogger("keleni").warning("ASR_ENABLED=1, но модели нет (%s) и нет ASR_MODEL_URL", rec.path)
     dp.include_router(build_router(corpus, storage, cfg.admins, cfg.data_dir))
     await bot.set_my_commands([BotCommand(command=k, description=v)
                                for k, v in texts.COMMANDS.items()])
     me = await bot.get_me()
     logging.getLogger("keleni").info("бот запущен: @%s, данные в %s", me.username, cfg.data_dir)
+    async def reaper():       # выгружаем модель из памяти, когда ею давно не пользовались
+        while True:
+            await asyncio.sleep(60)
+            rec.unload_if_idle()
+    if rec.available():
+        asyncio.create_task(reaper())
     await dp.start_polling(bot)
 
 

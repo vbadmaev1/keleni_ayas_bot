@@ -1,7 +1,11 @@
 .git
+research
 data
 .env
 corpus/raw.json
 tools
 tests
 __pycache__
+audio/slow
+audio/full/manual_*
+audio/sent/manual_*/
