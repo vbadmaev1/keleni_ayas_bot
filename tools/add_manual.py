@@ -11,6 +11,7 @@ REV = ROOT / "research/w2v/review"
 OPUS = ["-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-application", "voip",
         "-af", "loudnorm=I=-18:TP=-2:LRA=11"]
 NOTE = "Текст проверен вручную. В режиме «По предложениям» доступны проверенные фрагменты. Перевода нет."
+SARPA_RECORDINGS = {"sarpa", "sarpa2", "sarpa3", "video_0900"}
 TITLES = {
     "sarpa": "Открытие хурула в посёлке Сарпа",
     "sarpa2": "Сарпа: Павел Лиджиев о совхозе и «Джангаре»",
@@ -56,7 +57,10 @@ def main():
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(full)],
             text=True,
         ))
-        genre, genre_ru = ("manual", "Сарпа") if fid.startswith("sarpa") else ("manual_other", "Другое")
+        if fid in SARPA_RECORDINGS:
+            genre, genre_ru = "manual", "Сарпа"
+        else:
+            genre, genre_ru = "manual_other", "Другое"
         out.append({"id": tid, "genre": genre, "genre_ru": genre_ru, "title_ru": title,
                     "title_en": "", "dialect": "", "year": "", "place": "", "speakers": [], "audio": True,
                     "aligned": True, "duration": round(duration, 1), "partial": False,
