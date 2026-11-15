@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY bot bot
-COPY corpus/corpus.json corpus/corpus.json
+COPY corpus/corpus.json corpus/sarpa.json corpus/
 COPY audio audio
 # база, логи и кеш живут в томе, иначе пропадут при пересборке
 VOLUME ["/data"]

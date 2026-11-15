@@ -105,6 +105,7 @@ class Text:
     duration: float
     partial: bool
     sentences: List[Sentence]
+    note: str = ""      # пояснение к записи (например, «текст набран вручную»)
 
     @property
     def full_audio(self) -> Optional[Path]:
@@ -121,8 +122,11 @@ class Text:
 
 
 class Corpus:
-    def __init__(self, path: Path = ROOT / "corpus" / "corpus.json"):
+    def __init__(self, path: Path = ROOT / "corpus" / "corpus.json",
+                 manual: Path = ROOT / "corpus" / "sarpa.json"):
         raw = json.load(open(path, encoding="utf-8"))
+        if manual and Path(manual).exists():   # собранные вручную записи (tools/add_manual.py)
+            raw += json.load(open(manual, encoding="utf-8"))
         self.texts: Dict[str, Text] = {}
         self.order: List[str] = []
         for t in raw:
@@ -131,11 +135,12 @@ class Corpus:
                      for s in t["sentences"]]
             for s in sents:
                 s.folded = " | ".join(fold(x) for x in (s.cyr, s.lat, s.ru, s.en))
-            fields = {k: t[k] for k in Text.__dataclass_fields__ if k != "sentences"}
+            fields = {k: t[k] for k in Text.__dataclass_fields__ if k != "sentences" and k in t}
             self.texts[t["id"]] = Text(**fields, sentences=sents)
             self.order.append(t["id"])
         # сортировка каталога: по названию внутри жанра
-        self.order.sort(key=lambda i: (self.texts[i].genre, self.texts[i].title_ru))
+        self.order.sort(key=lambda i: (self.texts[i].genre == "manual",
+                                       self.texts[i].genre, self.texts[i].title_ru))
         self.index = {tid: k for k, tid in enumerate(self.order)}
         self._playable: Dict[tuple, List[Sentence]] = {}
 

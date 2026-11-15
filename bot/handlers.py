@@ -102,17 +102,17 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         return corpus.texts[corpus.order[int(i)]]
 
     def kalmyk(s: Sentence, script: str) -> str:
-        cyr, lat = html.escape(s.cyr), html.escape(s.lat)
+        cyr, lat = html.escape(s.cyr), html.escape(s.lat or s.cyr)
         if script == "lat":
             return lat
-        if script == "both":
+        if script == "both" and s.lat:
             return f"{cyr}\n<code>{lat}</code>"
         return cyr
 
     def translation(s: Sentence, lang: str) -> str:
         if lang == "both":
-            return f"{html.escape(s.ru)}\n{html.escape(s.en)}"
-        return html.escape(s.en if lang == "en" else s.ru)
+            return "\n".join(html.escape(x) for x in (s.ru, s.en) if x)
+        return html.escape((s.en if lang == "en" else s.ru) or "")
 
     def spoil(text: str, on: bool) -> str:
         return f"<tg-spoiler>{text}</tg-spoiler>" if on and text else text
@@ -147,11 +147,14 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
     @r.message(Command("about"))
     @r.message(F.text == T.BTN_ABOUT)
     async def about(m: Message):
-        n_sent = sum(len(t.sentences) for t in corpus.texts.values())
-        hours = sum(t.duration for t in corpus.texts.values()) / 3600
-        await m.answer(T.ABOUT.format(texts=len(corpus.texts), sent=n_sent,
-                                      hours=f"{hours:.1f}".replace(".", ",")),
-                       disable_web_page_preview=True)
+        inel = [t for t in corpus.texts.values() if t.genre != "manual"]
+        manual = [t for t in corpus.texts.values() if t.genre == "manual"]
+        n_sent = sum(len(t.sentences) for t in inel)
+        hours = sum(t.duration for t in inel) / 3600
+        text = T.ABOUT.format(texts=len(inel), sent=n_sent, hours=f"{hours:.1f}".replace(".", ","))
+        if manual:
+            text += T.ABOUT_MANUAL.format(texts=len(manual), sent=sum(len(t.sentences) for t in manual))
+        await m.answer(text, disable_web_page_preview=True)
 
     # ---------------------------------------------------------------- каталог
     def catalog_root():
@@ -218,6 +221,8 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
             lines.append("📄 Записи нет, только текст.")
         elif not t.aligned:
             lines.append("По предложениям слушать нельзя: в корпусе нет разметки по времени.")
+        if t.note:
+            lines.append(f"ℹ️ {html.escape(t.note)}")
         if t.partial:
             covered = t.sentences[-1].end
             lines.append(f"ℹ️ Текст расшифрован только для первых {fmt_dur(covered)} записи.")
@@ -264,7 +269,8 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
     def text_pages(t: Text, script: str, lang: str) -> List[str]:
         pages, cur = [], ""
         for s in t.sentences:
-            block = f"<b>{s.n}.</b> {kalmyk(s, script)}\n<i>{translation(s, lang)}</i>\n\n"
+            tr = translation(s, lang)
+            block = f"<b>{s.n}.</b> {kalmyk(s, script)}\n" + (f"<i>{tr}</i>\n" if tr else "") + "\n"
             if len(cur) + len(block) > PAGE_CHARS and cur:
                 pages.append(cur)
                 cur = ""
@@ -447,7 +453,7 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         except TelegramBadRequest:
             pass
         await c.message.answer(
-            f"{verdict}\n\n{html.escape(s.cyr)}\n<i>{html.escape(s.ru)}</i>",
+            f"{verdict}\n\n{html.escape(s.cyr)}\n<i>{html.escape(s.ru)}</i>",  # в тестах только предложения с переводом
             reply_markup=kb([[("❓ Ещё", "q"), ("📖 Контекст", f"s:{i}:{n}")]]))
 
     # ---------------------------------------------------------------- поиск
@@ -474,8 +480,8 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         buttons = []
         for k, s in enumerate(chunk, page * PAGE_RESULTS + 1):
             t = corpus.texts[s.text_id]
-            kal = mark(s.lat, q) if st["script"] == "lat" else mark(s.cyr, q)
-            tr = mark(s.en if st["lang"] == "en" else s.ru, q)
+            kal = mark(s.lat, q) if st["script"] == "lat" and s.lat else mark(s.cyr, q)
+            tr = mark(s.en if st["lang"] == "en" else s.ru, q) or "перевода нет"
             icon = "🔊" if t.clip(s.n) else "📄"
             lines.append(f"<b>{k}.</b> {icon} <i>{html.escape(t.title_ru)}</i>, #{s.n}\n{kal}\n— {tr}\n")
             buttons.append((f"{icon} {k}", f"s:{idx(t)}:{s.n}"))
