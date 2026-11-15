@@ -3,5 +3,6 @@ python-dotenv>=1.0,<2
 numpy>=1.26,<2
 onnxruntime>=1.20,<2
 pyctcdecode>=0.5,<1
-kenlm>=0.3.0,<0.4
-# + ffmpeg в системе (замедление 🐢, сборка аудио и распознавание)
+camel-kenlm==2026.2.7
+imageio-ffmpeg==0.6.0
+# Системный ffmpeg нужен для замедления записей и сборки корпуса.

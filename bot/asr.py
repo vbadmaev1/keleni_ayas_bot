@@ -297,20 +297,26 @@ class Recognizer:
 
     # --- распознавание ------------------------------------------------------
     def _run(self, src: str) -> Tuple[List[str], float]:
-        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src],
-                               capture_output=True, text=True, timeout=20)
+        from imageio_ffmpeg import get_ffmpeg_exe
+
         try:
-            dur = float(probe.stdout.strip())
-        except ValueError:
-            raise AsrError("Не получилось прочитать этот файл.")
-        if not np.isfinite(dur) or dur <= 0:
-            raise AsrError("Не получилось определить длину записи.")
+            decoded = subprocess.run(
+                [get_ffmpeg_exe(), "-nostdin", "-v", "error", "-threads", "1",
+                 "-protocol_whitelist", "file,pipe", "-i", src, "-map", "0:a:0",
+                 "-t", str(self.max_sec + 1), "-f", "f32le",
+                 "-ac", "1", "-ar", str(SR), "-"],
+                capture_output=True, timeout=60, check=True,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise AsrError("Не удалось извлечь звук за 60 с.") from e
+        except subprocess.CalledProcessError as e:
+            raise AsrError("Не получилось извлечь звук из файла.") from e
+
+        wav = np.frombuffer(decoded.stdout, dtype="<f4")
+        dur = len(wav) / SR
         if dur > self.max_sec:
-            raise AsrError(f"Запись длиннее {self.max_sec} с ({int(dur)} с). Пришлите кусок покороче.")
-        raw = subprocess.run(["ffmpeg", "-v", "quiet", "-t", str(self.max_sec + 1), "-i", src, "-vn", "-f", "f32le",
-                              "-ac", "1", "-ar", str(SR), "-"], capture_output=True, timeout=60).stdout
-        wav = np.frombuffer(raw, dtype=np.float32)
-        if len(wav) < SR * 0.5:
+            raise AsrError(f"Запись длиннее {self.max_sec} с. Пришлите кусок покороче.")
+        if dur < 0.5:
             raise AsrError("В файле нет звука или он слишком короткий.")
         sess = self._load()
         decoder = self._get_decoder()

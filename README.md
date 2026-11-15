@@ -69,7 +69,7 @@ python3 tools/build_audio.py corpus/raw.json
 - `slow/` — замедленные версии предложений.
 
 ```
-pip install -r requirements.txt   # + ffmpeg в системе
+pip install -r requirements.txt   # системный ffmpeg для замедления записей
 python -m bot.main
 ```
 Аудио (`audio/`, ~120 МБ) лежит в репозитории: на хостинге исходных mp3 нет.
@@ -82,6 +82,10 @@ CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/).
 под той же лицензией; использовать только некоммерчески, со ссылкой на источник.
 
 ## Распознавание речи
+На Linux x86-64 с Python 3.11 зависимости распознавания доступны готовыми
+wheels. Пакет `camel-kenlm` предоставляет модуль `kenlm` для CTC-декодера,
+а `imageio-ffmpeg` поставляет программу для извлечения звука.
+
 ONNX модель и языковая модель загружаются при первом запросе в `DATA_DIR/asr/`
 из [релиза asr-r4](https://github.com/vbadmaev1/keleni_ayas_bot/releases/tag/asr-r4).
 SHA-256 обеих загрузок проверяется перед использованием. В релизе лежат
