@@ -60,9 +60,15 @@ def build_asr_router(rec: Recognizer, admins: set) -> Router:
                 rec.release_reservation()
             if not done and not admin:
                 rec.limits.refund(uid)
-        body = "\n".join(html.escape(t) for t in texts) or "(речь не распознана)"
-        reply = f"{body}\n\n{NOTE}"
-        for start in range(0, len(reply), 3900):
-            await m.answer(reply[start:start + 3900])
+        body = "\n".join(texts) or "(речь не распознана)"
+        while len(body) > 3900:
+            end = body.rfind("\n", 1, 3901)
+            if end < 0:
+                end = body.rfind(" ", 1, 3901)
+            if end < 0:
+                end = 3900
+            await m.answer(html.escape(body[:end]))
+            body = body[end:].lstrip()
+        await m.answer(f"{html.escape(body)}\n\n{NOTE}")
 
     return r

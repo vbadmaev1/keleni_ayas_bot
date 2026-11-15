@@ -8,7 +8,7 @@
   ASR_LM_PATH/URL/SHA256  файл/адрес/сумма контрольной языковой модели (LM)
   ASR_LM_ENABLED     1 — включить декодирование со словарём (по умолчанию включено)
   ASR_THREADS        потоков ONNX Runtime (по умолчанию 2)
-  ASR_MAX_SEC        самая длинная запись, секунд (60)
+  ASR_MAX_SEC        самая длинная запись, секунд (240)
   ASR_MAX_MB         самый большой файл, МБ (20; у Telegram Bot API лимит скачивания 20 МБ)
   ASR_USER_COOLDOWN  пауза между запросами одного пользователя, секунд (20)
   ASR_USER_DAILY     запросов в сутки на пользователя (20); у админов лимитов нет
@@ -167,7 +167,7 @@ class Recognizer:
         self.lm_sha = os.getenv("ASR_LM_SHA256", LM_SHA256).lower()
         self.lm_params = json.loads(os.getenv("ASR_LM_PARAMS", '{"alpha":0.45,"beta":3.0,"unk":-3.5}'))
         self.threads = env_int("ASR_THREADS", 2)
-        self.max_sec = env_int("ASR_MAX_SEC", 60)
+        self.max_sec = env_int("ASR_MAX_SEC", 240)
         self.max_bytes = env_int("ASR_MAX_MB", 20) * 1024 * 1024
         self.queue_max = env_int("ASR_QUEUE", 2)
         self.min_free = env_int("ASR_MIN_FREE_MB", 1500)
