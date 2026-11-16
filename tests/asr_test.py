@@ -66,6 +66,31 @@ async def limits_tests():
         try: rec3._load(); raise SystemExit("ожидали отказ: мало памяти")
         except AsrError as e: assert "памяти" in str(e)
         asr.free_mb = orig
+        rec.queue_max = 2
+        assert rec.estimate_seconds(60) > rec.estimate_seconds(15)
+        assert rec.estimate_seconds(60, 10 * 1024**2) > rec.estimate_seconds(60)
+        assert rec.estimate_seconds(60, ahead=1) > rec.estimate_seconds(60)
+        assert rec.estimate_seconds(None) is None
+        first_started = asyncio.Event()
+        first_release = asyncio.Event()
+        second_started = asyncio.Event()
+
+        async def hold_first():
+            first_started.set()
+            await first_release.wait()
+
+        async def start_second():
+            second_started.set()
+
+        first = asyncio.create_task(rec.transcribe_file("a", on_start=hold_first))
+        await first_started.wait()
+        assert rec.try_reserve() and rec.requests_ahead == 1
+        second = asyncio.create_task(rec.transcribe_file("b", reserved=True, on_start=start_second))
+        await asyncio.sleep(0)
+        assert not second_started.is_set()
+        first_release.set()
+        await asyncio.gather(first, second)
+        assert second_started.is_set() and rec._waiting == 0
     for key, value in previous.items():
         if value is None:
             os.environ.pop(key, None)

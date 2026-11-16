@@ -148,12 +148,16 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
     @r.message(F.text == T.BTN_ABOUT)
     async def about(m: Message):
         inel = [t for t in corpus.texts.values() if not t.genre.startswith("manual")]
-        manual = [t for t in corpus.texts.values() if t.genre.startswith("manual")]
+        manual = [t for t in corpus.texts.values() if t.genre in {"manual", "manual_other"}]
+        extra = len(corpus.texts) - len(inel) - len(manual)
         n_sent = sum(len(t.sentences) for t in inel)
         hours = sum(t.duration for t in inel) / 3600
         text = T.ABOUT.format(texts=len(inel), sent=n_sent, hours=f"{hours:.1f}".replace(".", ","))
         if manual:
             text += T.ABOUT_MANUAL.format(texts=len(manual), sent=sum(len(t.sentences) for t in manual))
+        if extra:
+            text += (f"\n\n<b>Дополнительный аудиокаталог</b> · {extra} записей. "
+                     "Источники и статус расшифровки указаны в карточках.")
         await m.answer(text, disable_web_page_preview=True)
 
     # ---------------------------------------------------------------- каталог
@@ -219,10 +223,17 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         lines.append(info)
         if not t.audio:
             lines.append("📄 Записи нет, только текст.")
-        elif not t.aligned:
+        elif not t.aligned and not t.id.startswith("catalog_"):
             lines.append("По предложениям слушать нельзя: в корпусе нет разметки по времени.")
         if t.note:
             lines.append(f"ℹ️ {html.escape(t.note)}")
+        if t.has_automatic_transcript:
+            lines.append(f"⚠️ {T.AUTOMATIC_TRANSCRIPT}")
+        if t.source_url:
+            label = "Полная запись у источника" if t.preview_end > t.preview_start else "Источник записи"
+            lines.append(f'<a href="{html.escape(t.source_url, quote=True)}">{label}</a>')
+        if t.text_source_url:
+            lines.append(f'<a href="{html.escape(t.text_source_url, quote=True)}">Печатный текст</a>')
         if t.partial:
             covered = t.sentences[-1].end
             lines.append(f"ℹ️ Текст расшифрован только для первых {fmt_dur(covered)} записи.")
@@ -233,9 +244,11 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         rows = []
         if t.full_audio:
             rows.append([("▶️ Вся запись", f"f:{i}")])
+        elif t.preview_audio:
+            rows.append([("▶️ Аудиофрагмент", f"f:{i}")])
         if t.aligned:
             rows.append([("🎧 По предложениям", f"s:{i}:1")])
-        rows.append([("📝 Текст с переводом", f"x:{i}:0")])
+        rows.append([(transcript_button(t), f"x:{i}:0")])
         rows.append([("⬅️ К списку", f"g:{t.genre}:{corpus.by_genre(t.genre).index(t) // PAGE_TEXTS}")])
         return "\n".join(lines), kb(rows)
 
@@ -249,15 +262,29 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
             await c.message.answer(text, reply_markup=markup)
         await c.answer()
 
+    def transcript_button(t: Text) -> str:
+        return "📝 Расшифровка" if t.id.startswith("catalog_") else "📝 Текст с переводом"
+
     async def send_full(m: Message, t: Text, user_id: int):
-        storage.log(user_id, "full", t.id)
-        cap = f"<b>{html.escape(t.title_ru)}</b> · {html.escape(t.speaker_names)}"
+        path = t.full_audio or t.preview_audio
+        if path is None:
+            await m.answer("Аудиофайл записи сейчас недоступен.")
+            return
+        is_preview = path.parent.name == "preview"
+        event = "preview" if is_preview else "full"
+        storage.log(user_id, event, t.id)
+        cap = f"<b>{html.escape(t.title_ru)}</b>"
+        if t.speaker_names:
+            cap += f" · {html.escape(t.speaker_names)}"
+        if is_preview:
+            cap += f"\nФрагмент {fmt_dur(t.preview_start)}–{fmt_dur(t.preview_end)}."
         i = idx(t)
-        rows = [[("📝 Текст с переводом", f"x:{i}:0")]]
+        rows = [[(transcript_button(t), f"x:{i}:0")]]
         if t.aligned:
             rows[0].append(("🎧 По предложениям", f"s:{i}:1"))
         await m.bot.send_chat_action(m.chat.id, "upload_voice")
-        await send_audio_file(m, t.full_audio, f"full:{t.id}", cap, kb(rows), t.duration)
+        duration = t.preview_end - t.preview_start if is_preview else t.duration
+        await send_audio_file(m, path, f"{event}:{t.id}", cap, kb(rows), duration)
 
     @r.callback_query(F.data.startswith("f:"))
     async def cb_full(c: CallbackQuery):
@@ -270,7 +297,14 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         pages, cur = [], ""
         for s in t.sentences:
             tr = translation(s, lang)
-            block = f"<b>{s.n}.</b> {kalmyk(s, script)}\n" + (f"<i>{tr}</i>\n" if tr else "") + "\n"
+            label = T.TRANSCRIPT_LABELS.get(s.transcript_kind)
+            timestamp = f" · {fmt_dur(s.start)}" if label else ""
+            block = f"<b>{s.n}.</b>{timestamp} {kalmyk(s, script)}\n"
+            if tr:
+                block += f"<i>{tr}</i>\n"
+            if label:
+                block += f"<i>{label}</i>\n"
+            block += "\n"
             if len(cur) + len(block) > PAGE_CHARS and cur:
                 pages.append(cur)
                 cur = ""
@@ -301,6 +335,9 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         on = bool(st["spoiler"]) if spoiler is None else spoiler
         head = f"<b>{html.escape(t.title_ru)}</b> · {s.n}/{len(t.sentences)}"
         out = f"{head}\n{spoil(kalmyk(s, st['script']), on)}"
+        label = T.TRANSCRIPT_LABELS.get(s.transcript_kind)
+        if label:
+            out += f"\n\n<i>{label}</i>"
         tr = translation(s, st["lang"]).strip()
         if tr:
             out += f"\n\n{spoil('<i>' + tr + '</i>', on)}"
@@ -480,10 +517,13 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         buttons = []
         for k, s in enumerate(chunk, page * PAGE_RESULTS + 1):
             t = corpus.texts[s.text_id]
-            kal = mark(s.lat, q) if st["script"] == "lat" and s.lat else mark(s.cyr, q)
+            kal = mark(s.lat, q) if st["script"] == "lat" and s.lat else mark(
+                s.cyr[:360] + "…" if len(s.cyr) > 360 else s.cyr, q
+            )
             tr = mark(s.en if st["lang"] == "en" else s.ru, q) or "перевода нет"
             icon = "🔊" if t.clip(s.n) else "📄"
-            lines.append(f"<b>{k}.</b> {icon} <i>{html.escape(t.title_ru)}</i>, #{s.n}\n{kal}\n— {tr}\n")
+            label = f" · {T.AUTOMATIC_TRANSCRIPT}" if s.transcript_kind == "automatic" else ""
+            lines.append(f"<b>{k}.</b> {icon} <i>{html.escape(t.title_ru)}</i>, #{s.n}{label}\n{kal}\n— {tr}\n")
             buttons.append((f"{icon} {k}", f"s:{idx(t)}:{s.n}"))
         nav = []
         if page > 0:

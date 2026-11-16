@@ -19,7 +19,7 @@
 """
 import asyncio, hashlib, json, logging, os, re, subprocess, tempfile, time, urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -28,6 +28,7 @@ from .asr_punctuation import beam_words, greedy_words, punctuate, quiet_frames
 log = logging.getLogger("keleni.asr")
 HERE = Path(__file__).resolve().parent
 SR = 16000
+ASR_STARTUP_SECONDS = 12
 RELEASE = "https://github.com/vbadmaev1/keleni_ayas_bot/releases/download/asr-r4"
 MODEL_URL = RELEASE + "/model_int8.onnx"
 LM_URL = RELEASE + "/lm_final.arpa"
@@ -187,6 +188,9 @@ class Recognizer:
         self.last_used = 0.0
         self._sem = asyncio.Semaphore(1)     # одновременно распознаём только одну запись
         self._waiting = 0
+        self._active_until: Optional[float] = None
+        self._typical_audio_seconds = 30.0
+        self._seconds_per_audio_second = 0.8 if self.lm_enabled else 0.5
 
     # --- модель -------------------------------------------------------------
     def available(self) -> bool:
@@ -363,17 +367,53 @@ class Recognizer:
     def queue_full(self) -> bool:
         return self._waiting >= self.queue_max
 
-    async def transcribe_file(self, src: str, *, reserved: bool = False,
-                              punctuation: Optional[bool] = None) -> Tuple[List[str], float]:
+    @property
+    def requests_ahead(self) -> int:
+        """Количество других принятых запросов сразу после резервирования слота."""
+        return max(0, self._waiting - 1)
+
+    def _processing_seconds(self, duration: float) -> float:
+        return 2 + duration * self._seconds_per_audio_second
+
+    def estimate_seconds(self, duration: Optional[float], file_size: int = 0, *, ahead: int = 0) -> Optional[float]:
+        if not duration:
+            return None
+        estimate = self._processing_seconds(duration) + file_size / (2 * 1024**2)
+        if (not ahead or self._active_until is None) and (
+            self.session is None or (self.lm_enabled and self._decoder is None)
+        ):
+            estimate += ASR_STARTUP_SECONDS
+        if ahead and self._active_until is not None:
+            estimate += max(0, self._active_until - time.monotonic())
+            ahead -= 1
+        return estimate + ahead * self._processing_seconds(self._typical_audio_seconds)
+
+    async def transcribe_file(
+        self, src: str, *, reserved: bool = False, punctuation: Optional[bool] = None,
+        duration_hint: Optional[float] = None, on_start: Optional[Callable[[], Awaitable[None]]] = None,
+    ) -> Tuple[List[str], float]:
         if not reserved and not self.try_reserve():
             raise AsrError("Сейчас много запросов. Попробуйте через минуту.")
         try:
             async with self._sem:
-                loop = asyncio.get_running_loop()
-                # Do not cancel a running executor thread on timeout: Python cannot stop it,
-                # and releasing the semaphore would allow a second inference to overlap.
-                res = await loop.run_in_executor(None, self._run, src, punctuation)
-                self.last_used = time.time()
-                return res
+                try:
+                    if on_start is not None:
+                        await on_start()
+                    loop = asyncio.get_running_loop()
+                    started = time.monotonic()
+                    was_loaded = self.session is not None and (not self.lm_enabled or self._decoder is not None)
+                    estimated = self._processing_seconds(duration_hint or self._typical_audio_seconds)
+                    self._active_until = started + estimated + (0 if was_loaded else ASR_STARTUP_SECONDS)
+                    # A timeout cannot stop a running executor thread.
+                    res = await loop.run_in_executor(None, self._run, src, punctuation)
+                    _, duration = res
+                    if was_loaded and duration >= 3:
+                        rate = min(10, max(0.05, (time.monotonic() - started) / duration))
+                        self._seconds_per_audio_second = 0.75 * self._seconds_per_audio_second + 0.25 * rate
+                    self._typical_audio_seconds = 0.75 * self._typical_audio_seconds + 0.25 * duration
+                    self.last_used = time.time()
+                    return res
+                finally:
+                    self._active_until = None
         finally:
             self.release_reservation()
