@@ -1,15 +1,13 @@
-"""Консервативная пунктуация для калмыцкой расшифровки с таймкодами CTC."""
+"""Пунктуация калмыцкой расшифровки с паузами между словами."""
 from dataclasses import dataclass
 from statistics import median
 from typing import Iterable, Optional
 
 import numpy as np
 
+from .punctuation_model import MARKS, QUESTION_WORDS, load_model, render_sentences, timed_mark_indices
+
 FRAME_SECONDS = 0.02
-QUESTION_WORDS = frozenset({
-    "кен", "ю", "юн", "юун", "юуга", "юунд", "юуна", "юңгад", "яһад",
-    "яһҗ", "ямар", "ямаран", "альк", "аль", "кезә", "кедү", "хама", "хальд",
-})
 QUESTION_ENDINGS = frozenset({
     "кемб", "кенб", "күмб", "күмбч", "юв", "юмб", "юмбч", "юмбт",
     "яахв", "яһхв", "яһв", "яахмб", "яһсмб", "яһла", "болхв", "болсмб", "билү", "бәәнү",
@@ -101,15 +99,13 @@ def is_question(words: list[str], before_speech_tag: bool) -> bool:
             and all(w not in REPORTING_WORDS for w in words[1:]))
 
 
-def punctuate(words: list[TimedWord], quiet: np.ndarray) -> list[str]:
+def rule_marks(words: list[TimedWord], pauses: list[float]) -> list[str]:
     if not words:
         return []
-    pauses = [pause_seconds(a, b, quiet) for a, b in zip(words, words[1:])]
     positive_pauses = [p for p in pauses if p >= .08]
     turn_pause = max(.46, min(.66, 2.2 * median(positive_pauses))) if positive_pauses else .46
-    output = []
-    phrase = []
     marks = []
+    phrase = []
     words_since_mark = 0
     for i, word in enumerate(words):
         phrase.append(word.text)
@@ -139,13 +135,37 @@ def punctuate(words: list[TimedWord], quiet: np.ndarray) -> list[str]:
             )
         if boundary:
             plain = [token.casefold() for token in phrase]
-            text = ' '.join(part + mark for part, mark in zip(phrase, [*marks, '']))
-            output.append(text[0].upper() + text[1:] + ('?' if is_question(plain, before_speech_tag) else '.'))
+            marks.append('?' if is_question(plain, before_speech_tag) else '.')
             phrase = []
-            marks = []
             words_since_mark = 0
         else:
             marks.append(',' if comma else '')
             if comma:
                 words_since_mark = 0
-    return output
+    return marks
+
+
+def punctuate(words: list[TimedWord], quiet: np.ndarray) -> list[str]:
+    if not words:
+        return []
+
+    text = [word.text for word in words]
+    pauses = [pause_seconds(left, right, quiet) for left, right in zip(words, words[1:])]
+    baseline = rule_marks(words, pauses)
+    model = load_model()
+    if model is None:
+        return render_sentences(text, baseline)
+
+    gaps = np.array([
+        max(0.0, right.start - left.end)
+        if left.end is not None and right.start is not None else np.nan
+        for left, right in zip(words, words[1:])
+    ])
+    scores = model.score(text, pauses, gaps)
+    indices = scores.argmax(axis=1)
+    timed = np.flatnonzero(np.isfinite(gaps))
+    existing_questions = np.array([mark == "?" for mark in baseline])
+    indices[timed] = timed_mark_indices(scores[timed], existing_questions[timed])
+    marks = [MARKS[i] for i in indices]
+    marks[-1] = "?" if baseline[-1] == "?" or marks[-1] == "?" else "."
+    return render_sentences(text, marks)
