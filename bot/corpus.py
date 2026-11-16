@@ -83,6 +83,7 @@ class Sentence:
     ru: str
     en: str
     folded: str = ""
+    transcript_kind: str = ""
 
     @property
     def duration(self) -> float:
@@ -105,7 +106,22 @@ class Text:
     duration: float
     partial: bool
     sentences: List[Sentence]
-    note: str = ""      # пояснение к записи (например, «текст набран вручную»)
+    note: str = ""
+    source_url: str = ""
+    text_source_url: str = ""
+    preview_start: float = 0.0
+    preview_end: float = 0.0
+
+    @property
+    def preview_audio(self) -> Optional[Path]:
+        if self.preview_end <= self.preview_start:
+            return None
+        path = AUDIO / "preview" / f"{self.id}.ogg"
+        return path if path.is_file() else None
+
+    @property
+    def has_automatic_transcript(self) -> bool:
+        return any(s.transcript_kind == "automatic" for s in self.sentences)
 
     @property
     def full_audio(self) -> Optional[Path]:
@@ -123,14 +139,19 @@ class Text:
 
 class Corpus:
     def __init__(self, path: Path = ROOT / "corpus" / "corpus.json",
-                 manual: Path = ROOT / "corpus" / "manual.json"):
+                 manual: Path = ROOT / "corpus" / "manual.json",
+                 additional: Optional[Path] = ROOT / "corpus" / "additional.json"):
         raw = json.load(open(path, encoding="utf-8"))
         if manual and Path(manual).exists():   # собранные вручную записи (tools/add_manual.py)
             raw += json.load(open(manual, encoding="utf-8"))
+        existing_ids = {t["id"] for t in raw}
+        if additional and Path(additional).exists():
+            raw += json.loads(Path(additional).read_text(encoding="utf-8"))
         self.texts: Dict[str, Text] = {}
         self.order: List[str] = []
         for t in raw:
-            sents = [Sentence(text_id=t["id"], **{k: s[k] for k in
+            sents = [Sentence(text_id=t["id"], transcript_kind=s.get("transcript_kind", ""),
+                              **{k: s[k] for k in
                               ("n", "start", "end", "lat", "cyr", "ru", "en")})
                      for s in t["sentences"]]
             for s in sents:
@@ -139,7 +160,7 @@ class Corpus:
             self.texts[t["id"]] = Text(**fields, sentences=sents)
             self.order.append(t["id"])
         # сортировка каталога: по названию внутри жанра
-        self.order.sort(key=lambda i: (self.texts[i].genre.startswith("manual"),
+        self.order.sort(key=lambda i: (i not in existing_ids, self.texts[i].genre.startswith("manual"),
                                        self.texts[i].genre, self.texts[i].title_ru))
         self.index = {tid: k for k, tid in enumerate(self.order)}
         self._playable: Dict[tuple, List[Sentence]] = {}

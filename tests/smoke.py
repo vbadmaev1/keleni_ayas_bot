@@ -174,6 +174,17 @@ async def main():
     show(await click(f"s:{i}:3"), "sent with both/en")
     show(await click(f"er:{i}:3"), "report")
     show(await text("правильно так"), "report text")
+    if any(t.id.startswith("catalog_") for t in corpus.texts.values()):
+        assert all(corpus.index[key] == index for key, index in Corpus(additional=None).index.items())
+        preview = next(t for t in corpus.texts.values() if t.preview_audio and t.has_automatic_transcript)
+        p = corpus.index[preview.id]
+        card = show(await click(f"t:{p}"), "TV preview card")[0]
+        assert "Автоматическая расшифровка. Возможны ошибки." in card.text
+        assert preview.source_url in card.text
+        assert show(await click(f"f:{p}"), "TV preview")[0].caption.startswith("<b>")
+        assert "Автоматическая расшифровка" in show(await click(f"x:{p}:0"), "TV transcript")[0].text
+        full = next(t for t in corpus.texts.values() if t.id.startswith("catalog_") and t.full_audio)
+        assert show(await click(f"f:{corpus.index[full.id]}"), "additional full recording")
     show(await text("ℹ️ О записях"), "about")
     show(await text("/stats"), "stats")
 
