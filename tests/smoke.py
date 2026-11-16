@@ -105,7 +105,11 @@ async def main():
             "message_id": uid[0], "date": int(time.time()), "chat": CHAT, "from": user,
             "voice": {"file_id": "audio", "file_unique_id": "U", "duration": 1},
         }))
-        return next(call.text for call in session.calls if isinstance(call, SendMessage))
+        messages = [call.text for call in session.calls if isinstance(call, SendMessage)]
+        assert len(messages) == 2
+        assert "Начинаю распознавать запись" in messages[0]
+        assert "Примерное время до результата" in messages[0]
+        return messages[-1]
 
     def show(calls, label):
         out = [c for c in calls if isinstance(c, (SendMessage, SendVoice, EditMessageText))]
