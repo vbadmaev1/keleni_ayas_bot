@@ -11,27 +11,36 @@ import time
 from pathlib import Path
 from typing import Optional
 
-DEFAULTS = {"script": "cyr", "lang": "ru", "spoiler": 1}
+DEFAULTS = {"script": "cyr", "lang": "ru", "spoiler": 1, "asr_punctuation": 0}
 
 
 class Storage:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, asr_punctuation_default: bool = False):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path), check_same_thread=False)
         # то же, что в events, но построчным JSON: удобно смотреть и выгружать
         self.jsonl = path.parent / "events.jsonl"
+        self.defaults = {**DEFAULTS, "asr_punctuation": int(asr_punctuation_default)}
         self.lock = threading.Lock()
         with self.lock:
             self.db.executescript("""
             CREATE TABLE IF NOT EXISTS files (key TEXT PRIMARY KEY, file_id TEXT);
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY, script TEXT, lang TEXT, spoiler INTEGER,
-                first_seen REAL, last_seen REAL);
+                first_seen REAL, last_seen REAL, asr_punctuation INTEGER);
             CREATE TABLE IF NOT EXISTS events (
                 ts REAL, user_id INTEGER, kind TEXT, payload TEXT);
             CREATE TABLE IF NOT EXISTS answers (
                 ts REAL, user_id INTEGER, mode TEXT, text_id TEXT, n INTEGER, score REAL);
             """)
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                columns = {row[1] for row in self.db.execute("PRAGMA table_info(users)")}
+                if "asr_punctuation" not in columns:
+                    self.db.execute("ALTER TABLE users ADD COLUMN asr_punctuation INTEGER")
+            except sqlite3.Error:
+                self.db.rollback()
+                raise
             self.db.commit()
 
     # --- file_id -------------------------------------------------------------
@@ -53,12 +62,15 @@ class Storage:
     # --- пользователи --------------------------------------------------------
     def settings(self, user_id: int) -> dict:
         with self.lock:
-            row = self.db.execute("SELECT script, lang, spoiler FROM users WHERE user_id=?",
-                                  (user_id,)).fetchone()
+            row = self.db.execute(
+                "SELECT script, lang, spoiler, asr_punctuation FROM users WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
         if not row:
-            return dict(DEFAULTS)
-        return {"script": row[0] or DEFAULTS["script"], "lang": row[1] or DEFAULTS["lang"],
-                "spoiler": DEFAULTS["spoiler"] if row[2] is None else row[2]}
+            return dict(self.defaults)
+        return {"script": row[0] or self.defaults["script"], "lang": row[1] or self.defaults["lang"],
+                "spoiler": self.defaults["spoiler"] if row[2] is None else row[2],
+                "asr_punctuation": self.defaults["asr_punctuation"] if row[3] is None else row[3]}
 
     def set_setting(self, user_id: int, key: str, value) -> None:
         assert key in DEFAULTS

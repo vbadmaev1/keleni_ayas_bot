@@ -4,6 +4,7 @@
 """
 import asyncio
 import re
+import sqlite3
 import sys
 import tempfile
 import time
@@ -15,10 +16,12 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.base import BaseSession
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.methods import (AnswerCallbackQuery, EditMessageReplyMarkup, EditMessageText,
+from aiogram.methods import (AnswerCallbackQuery, EditMessageReplyMarkup, EditMessageText, GetFile,
                              SendChatAction, SendMessage, SendVoice)
-from aiogram.types import Message, Update
+from aiogram.types import File, Message, Update
 
+from bot.asr import Recognizer
+from bot.asr_handlers import build_asr_router
 from bot.corpus import Corpus
 from bot.handlers import build_router
 from bot.practice import dictation_score
@@ -38,6 +41,8 @@ class FakeSession(BaseSession):
         self.calls.append(method)
         if isinstance(method, (AnswerCallbackQuery, SendChatAction)):
             return True
+        if isinstance(method, GetFile):
+            return File(file_id=method.file_id, file_unique_id="U", file_path="voice.ogg")
         if isinstance(method, (SendMessage, SendVoice, EditMessageText, EditMessageReplyMarkup)):
             self.mid += 1
             msg = {"message_id": self.mid, "date": int(time.time()), "chat": CHAT,
@@ -58,10 +63,22 @@ class FakeSession(BaseSession):
 async def main():
     corpus = Corpus()
     tmp = Path(tempfile.mkdtemp())
-    storage = Storage(tmp / "db.sqlite")
+    db = tmp / "db.sqlite"
+    with sqlite3.connect(db) as legacy:
+        legacy.execute("CREATE TABLE users (user_id INTEGER PRIMARY KEY, script TEXT, lang TEXT, "
+                       "spoiler INTEGER, first_seen REAL, last_seen REAL)")
+        legacy.execute("INSERT INTO users VALUES (42, 'cyr', 'ru', 1, 0, 0)")
+    storage = Storage(db)
+    assert storage.settings(42) == {"script": "cyr", "lang": "ru", "spoiler": 1, "asr_punctuation": 0}
     session = FakeSession()
     bot = Bot("1:TEST", session=session, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
+    class FakeRecognizer(Recognizer):
+        def _run(self, src, punctuation=None):
+            return (["Кен ирв?"] if punctuation else ["кен ирв"]), 1.0
+
+    rec = FakeRecognizer(tmp)
+    dp.include_router(build_asr_router(rec, {42, 43}, storage))
     dp.include_router(build_router(corpus, storage, {42}))
     uid = [0]
 
@@ -81,6 +98,14 @@ async def main():
             "id": str(uid[0]), "from": USER, "chat_instance": "c", "data": data,
             "message": {"message_id": 1, "date": int(time.time()), "chat": CHAT, "text": "x"}}))
         return list(session.calls)
+
+    async def voice(user):
+        session.calls.clear()
+        await dp.feed_update(bot, upd(message={
+            "message_id": uid[0], "date": int(time.time()), "chat": CHAT, "from": user,
+            "voice": {"file_id": "audio", "file_unique_id": "U", "duration": 1},
+        }))
+        return next(call.text for call in session.calls if isinstance(call, SendMessage))
 
     def show(calls, label):
         out = [c for c in calls if isinstance(c, (SendMessage, SendVoice, EditMessageText))]
@@ -131,7 +156,19 @@ async def main():
     qa = [b.callback_data for row in q[-1].reply_markup.inline_keyboard for b in row
           if b.callback_data.startswith("qa:")][0]
     show(await click(qa), "quiz answer")
-    show(await text("⚙️ Настройки"), "settings")
+    settings = show(await text("⚙️ Настройки"), "settings")[0]
+    assert any(b.callback_data == "set:asr_punctuation:1" for row in settings.reply_markup.inline_keyboard for b in row)
+    enabled = show(await click("set:asr_punctuation:1"), "enable punctuation")[0]
+    assert any(b.callback_data == "set:asr_punctuation:0" and b.text.startswith("✅")
+               for row in enabled.reply_markup.inline_keyboard for b in row)
+    assert (await voice(USER)).startswith("Кен ирв?")
+    assert (await voice({**USER, "id": 43})).startswith("кен ирв")
+    assert Storage(db).settings(42)["asr_punctuation"] == 1
+    show(await click("set:asr_punctuation:0"), "disable punctuation")
+    assert (await voice(USER)).startswith("кен ирв")
+    with_default = Storage(db, asr_punctuation_default=True)
+    assert with_default.settings(42)["asr_punctuation"] == 0
+    assert with_default.settings(43)["asr_punctuation"] == 1
     show(await click("set:script:both"), "set script")
     show(await click("set:lang:en"), "set lang")
     show(await click(f"s:{i}:3"), "sent with both/en")

@@ -4,12 +4,13 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from .asr import AsrError, Recognizer
+from .storage import Storage
 
 log = logging.getLogger("keleni.asr")
 NOTE = "<i>Автоматическая расшифровка может содержать ошибки; проверяйте по записи.</i>"
 
 
-def build_asr_router(rec: Recognizer, admins: set) -> Router:
+def build_asr_router(rec: Recognizer, admins: set, storage: Storage) -> Router:
     r = Router()
     MEDIA = F.voice | F.audio | F.video | F.video_note | (F.document & F.document.mime_type.regexp(r"^(audio|video)/"))
 
@@ -45,8 +46,9 @@ def build_asr_router(rec: Recognizer, admins: set) -> Router:
             with tempfile.TemporaryDirectory() as td:
                 path = os.path.join(td, "in")
                 await m.bot.download(f, destination=path)
+                punctuation = bool(storage.settings(uid)["asr_punctuation"])
                 reserved = False  # transcribe_file освобождает слот в своём finally
-                texts, secs = await rec.transcribe_file(path, reserved=True)
+                texts, secs = await rec.transcribe_file(path, reserved=True, punctuation=punctuation)
             done = True
         except AsrError as e:
             await m.answer(f"⚠️ {html.escape(str(e))}")

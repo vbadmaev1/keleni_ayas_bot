@@ -32,14 +32,14 @@ async def run() -> None:
                                       backupCount=5, encoding="utf-8")])
     logging.getLogger("aiogram.event").setLevel(logging.WARNING)
     corpus = Corpus()
-    storage = Storage(cfg.data_dir / "bot.sqlite")
+    rec = Recognizer(cfg.data_dir)
+    storage = Storage(cfg.data_dir / "bot.sqlite", asr_punctuation_default=rec.punctuation_enabled)
     logging.getLogger("keleni").info("корпус: %d текстов", len(corpus.texts))
 
     bot = Bot(cfg.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
-    rec = Recognizer(cfg.data_dir)
     if rec.available():
-        dp.include_router(build_asr_router(rec, cfg.admins))   # раньше основного: ловит голосовые и аудио
+        dp.include_router(build_asr_router(rec, cfg.admins, storage))   # раньше основного: ловит голосовые и аудио
         logging.getLogger("keleni").info("распознавание речи включено (потоков: %d, до %d с)", rec.threads, rec.max_sec)
     elif rec.enabled:
         logging.getLogger("keleni").warning("ASR_ENABLED=1, но модели нет (%s) и нет ASR_MODEL_URL", rec.path)

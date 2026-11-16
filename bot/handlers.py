@@ -557,7 +557,9 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
                  for k, v in SCRIPTS.items()],
                 [(("• " if st["lang"] == k else "") + v, f"set:lang:{k}") for k, v in LANGS.items()],
                 [(("✅" if st["spoiler"] else "⬜") + " Прятать текст под спойлер",
-                  f"set:spoiler:{0 if st['spoiler'] else 1}")]]
+                  f"set:spoiler:{0 if st['spoiler'] else 1}")],
+                [(("✅" if st["asr_punctuation"] else "⬜") + " Пунктуация в расшифровке",
+                  f"set:asr_punctuation:{0 if st['asr_punctuation'] else 1}")]]
         stats = storage.user_stats(user_id)
         q = stats.get("quiz")
         extra = ""
@@ -577,10 +579,12 @@ def build_router(corpus: Corpus, storage: Storage, admins: set,
         text, markup = settings_view(m.from_user.id)
         await m.answer(text, reply_markup=markup)
 
-    @r.callback_query(F.data.startswith("set:"))
+    @r.callback_query(F.data.regexp(
+        r"^set:(?:script:(?:cyr|lat|both)|lang:(?:ru|en|both)|(?:spoiler|asr_punctuation):[01])$"
+    ))
     async def cb_set(c: CallbackQuery):
         _, key, val = c.data.split(":")
-        storage.set_setting(c.from_user.id, key, int(val) if key == "spoiler" else val)
+        storage.set_setting(c.from_user.id, key, int(val) if key in {"spoiler", "asr_punctuation"} else val)
         text, markup = settings_view(c.from_user.id)
         try:
             await c.message.edit_text(text, reply_markup=markup)

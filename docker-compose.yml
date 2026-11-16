@@ -5,6 +5,7 @@ services:
     env_file: .env
     environment:
       ASR_ENABLED: ${ASR_ENABLED:-1}
+      ASR_PUNCTUATION: ${ASR_PUNCTUATION:-0}
       ASR_LM_ENABLED: ${ASR_LM_ENABLED:-1}
       ASR_MAX_SEC: ${ASR_MAX_SEC:-240}
       ASR_MAX_MB: ${ASR_MAX_MB:-20}

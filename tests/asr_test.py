@@ -47,7 +47,7 @@ async def limits_tests():
         except AsrError: pass
         # очередь: один запрос занимает слот, второй получает «занято», а не ставится бесконечно
         started = asyncio.Event(); release = asyncio.Event()
-        def slow(src): time.sleep(0.3); return ["x"], 1.0
+        def slow(src, punctuation): time.sleep(0.3); return ["x"], 1.0
         rec._run = slow
         t1 = asyncio.create_task(rec.transcribe_file("a")); await asyncio.sleep(0.05)
         try: await rec.transcribe_file("b"); raise SystemExit("ожидали «занято»")

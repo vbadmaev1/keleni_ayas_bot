@@ -6,6 +6,7 @@
   ASR_MODEL_URL      адрес модели; по умолчанию — GitHub Release asr-r4
   ASR_MODEL_SHA256   контрольная сумма модели (если задана — проверяется)
   ASR_LM_PATH/URL/SHA256  файл/адрес/сумма контрольной языковой модели (LM)
+  ASR_PUNCTUATION    начальное значение пункта «Пунктуация» в /settings (0)
   ASR_LM_ENABLED     1 — включить декодирование со словарём (по умолчанию включено)
   ASR_THREADS        потоков ONNX Runtime (по умолчанию 2)
   ASR_MAX_SEC        самая длинная запись, секунд (240)
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+from .asr_punctuation import beam_words, greedy_words, punctuate, quiet_frames
 
 log = logging.getLogger("keleni.asr")
 HERE = Path(__file__).resolve().parent
@@ -161,6 +164,7 @@ class Recognizer:
         self.path = Path(os.getenv("ASR_MODEL_PATH") or data_dir / "asr" / "model_int8.onnx")
         self.url = os.getenv("ASR_MODEL_URL", MODEL_URL)
         self.sha = os.getenv("ASR_MODEL_SHA256", MODEL_SHA256).lower()
+        self.punctuation_enabled = os.getenv("ASR_PUNCTUATION", "0") == "1"
         self.lm_enabled = os.getenv("ASR_LM_ENABLED", "1") == "1"
         self.lm_path = Path(os.getenv("ASR_LM_PATH") or data_dir / "asr" / "lm_final.arpa")
         self.lm_url = os.getenv("ASR_LM_URL", LM_URL)
@@ -296,7 +300,9 @@ class Recognizer:
             log.info("модель выгружена из памяти (простой)")
 
     # --- распознавание ------------------------------------------------------
-    def _run(self, src: str) -> Tuple[List[str], float]:
+    def _run(self, src: str, punctuation: Optional[bool] = None) -> Tuple[List[str], float]:
+        if punctuation is None:
+            punctuation = self.punctuation_enabled
         from imageio_ffmpeg import get_ffmpeg_exe
 
         try:
@@ -321,16 +327,27 @@ class Recognizer:
         sess = self._load()
         decoder = self._get_decoder()
         texts = []
+        timed_words = []
         for a, b in split(wav):
             x = wav[int(a * SR):int(b * SR)]
             x = ((x - x.mean()) / (x.std() + 1e-7)).astype(np.float32)
             lg = sess.run(None, {"input": x[None]})[0][0]
             max_logit = np.max(lg, axis=-1, keepdims=True)
             log_probs = lg - max_logit - np.log(np.exp(lg - max_logit).sum(axis=-1, keepdims=True))
+            if punctuation:
+                if decoder is None:
+                    timed_words.extend(greedy_words(lg.argmax(-1), self.inv, self.pad, a))
+                else:
+                    best = decoder.decode_beams(log_probs, beam_width=60, prune_history=True)
+                    if best:
+                        timed_words.extend(beam_words(best[0][0], best[0][2], a))
+                continue
             t = (re.sub(r"\s+", " ", decoder.decode(log_probs, beam_width=60)).strip()
                  if decoder is not None else decode_ids(lg.argmax(-1), self.inv, self.pad))
             if t:
                 texts.append(t)
+        if punctuation:
+            texts = punctuate(timed_words, quiet_frames(wav, SR))
         return texts, dur
 
     def try_reserve(self) -> bool:
@@ -346,7 +363,8 @@ class Recognizer:
     def queue_full(self) -> bool:
         return self._waiting >= self.queue_max
 
-    async def transcribe_file(self, src: str, *, reserved: bool = False) -> Tuple[List[str], float]:
+    async def transcribe_file(self, src: str, *, reserved: bool = False,
+                              punctuation: Optional[bool] = None) -> Tuple[List[str], float]:
         if not reserved and not self.try_reserve():
             raise AsrError("Сейчас много запросов. Попробуйте через минуту.")
         try:
@@ -354,7 +372,7 @@ class Recognizer:
                 loop = asyncio.get_running_loop()
                 # Do not cancel a running executor thread on timeout: Python cannot stop it,
                 # and releasing the semaphore would allow a second inference to overlap.
-                res = await loop.run_in_executor(None, self._run, src)
+                res = await loop.run_in_executor(None, self._run, src, punctuation)
                 self.last_used = time.time()
                 return res
         finally:
